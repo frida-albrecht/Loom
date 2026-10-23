@@ -1,0 +1,14 @@
+module {
+  func.func private @printMemrefF32(tensor<*xf32>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<8.365000e+01> : tensor<7x2x5xf32>}> : () -> tensor<7x2x5xf32>
+    %1 = "tosa.const"() <{values = dense<-1.040000e+02> : tensor<1x1x1xf32>}> : () -> tensor<1x1x1xf32>
+    %2 = tosa.pow %0, %1 : (tensor<7x2x5xf32>, tensor<1x1x1xf32>) -> tensor<7x2x5xf32>
+    %3 = tosa.reduce_min %2 {axis = 2 : i32} : (tensor<7x2x5xf32>) -> tensor<7x2x1xf32>
+    %4 = tosa.rsqrt %3 : (tensor<7x2x1xf32>) -> tensor<7x2x1xf32>
+    %cast = tensor.cast %4 : tensor<7x2x1xf32> to tensor<*xf32>
+    call @printMemrefF32(%cast) : (tensor<*xf32>) -> ()
+    return
+  }
+}
+

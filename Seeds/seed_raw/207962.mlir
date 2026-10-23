@@ -1,0 +1,16 @@
+module {
+  func.func private @printMemrefI16(tensor<*xi16>) attributes {llvm.emit_c_interface}
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<-193> : tensor<5x1x3xi16>}> : () -> tensor<5x1x3xi16>
+    %1 = tosa.reduce_sum %0 {axis = 2 : i32} : (tensor<5x1x3xi16>) -> tensor<5x1x1xi16>
+    %2 = tosa.bitwise_and %1, %1 : (tensor<5x1x1xi16>, tensor<5x1x1xi16>) -> tensor<5x1x1xi16>
+    %3 = tosa.arithmetic_right_shift %2, %2 {round = false} : (tensor<5x1x1xi16>, tensor<5x1x1xi16>) -> tensor<5x1x1xi16>
+    %4 = tosa.bitwise_or %3, %2 : (tensor<5x1x1xi16>, tensor<5x1x1xi16>) -> tensor<5x1x1xi16>
+    %5 = tosa.logical_right_shift %4, %4 : (tensor<5x1x1xi16>, tensor<5x1x1xi16>) -> tensor<5x1x1xi16>
+    %6 = tosa.reduce_sum %5 {axis = 2 : i32} : (tensor<5x1x1xi16>) -> tensor<5x1x1xi16>
+    %cast = tensor.cast %6 : tensor<5x1x1xi16> to tensor<*xi16>
+    call @printMemrefI16(%cast) : (tensor<*xi16>) -> ()
+    return
+  }
+}
+

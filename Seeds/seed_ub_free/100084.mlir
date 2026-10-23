@@ -1,0 +1,14 @@
+module {
+  func.func private @printMemrefF32(tensor<*xf32>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<1.556400e+02> : tensor<2x6x6x5xf32>}> : () -> tensor<2x6x6x5xf32>
+    %1 = "tosa.const"() <{values = dense<1.823000e+01> : tensor<2x5x5x5xf32>}> : () -> tensor<2x5x5x5xf32>
+    %2 = "tosa.const"() <{values = dense<4.944000e+01> : tensor<1xf32>}> : () -> tensor<1xf32>
+    %3 = "tosa.const"() <{values = dense<1.839000e+01> : tensor<2x2x2x2xf32>}> : () -> tensor<2x2x2x2xf32>
+    %4 = linalg.conv_2d_nhwc_fhwc {dilations = dense<1> : tensor<2xi64>, strides = dense<1> : tensor<2xi64>} ins(%0, %1 : tensor<2x6x6x5xf32>, tensor<2x5x5x5xf32>) outs(%3 : tensor<2x2x2x2xf32>) -> tensor<2x2x2x2xf32>
+    %cast = tensor.cast %4 : tensor<2x2x2x2xf32> to tensor<*xf32>
+    call @printMemrefF32(%cast) : (tensor<*xf32>) -> ()
+    return
+  }
+}
+

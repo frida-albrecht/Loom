@@ -1,0 +1,36 @@
+common:
+  #=====================Please Modify this =========================
+  llvm_project: '/home/workdir/llvm-project'
+  #=================================================================
+
+  seed_pool: '../Seeds/seed_ub_free' #给绝对路径
+  path_dir: './conf/paths/pure_lowering_path' #给绝对路径
+  testName: 'test'
+  MAX_path: 5  # the number of pure lowering path
+  MAX_extend: 11  # the number of path extension
+  mode: 'ALL'
+  #OL: disable extension
+  #SE: only expand once
+  #RE: extend with random transformations
+  #FE: use fixed 5 pure lowering path
+  #ALL: complete implementation
+
+diff:
+  run_time : 24  # 24h
+  crash_root_dir : './result/crash/'
+  lowering_path: './conf/lowering_path_rl.npy' #'/temp/path/'
+  temp_ir_path: '/temp/'
+
+opt:
+  opts: './conf/passes/opts.txt' #all transformation passes
+  opts_by_dialect: './conf/passes/opt_passes.json' #specific transformation passes
+  random_rate: 0.1
+  opt_num: 1
+
+report:
+  savepath : '../Results/'
+
+
+
+
+

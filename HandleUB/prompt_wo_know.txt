@@ -1,0 +1,65 @@
+You are given an MLIR program in the TOSA dialect.
+Your task is to analyze the program, detect undefined behaviors (UB) for only the specified ops, automatically fix them by inserting safe TOSA operations, and output the corrected MLIR.
+
+You MUST follow all instructions below strictly and in order.
+
+1. Output Inference
+Process the operation in given MLIR program sequentially in order. For each operation:
+- Derive the output values or symbolic expressions based on the inputs and operation semantics.
+- Use these computed outputs for later undefined-behavior detection.
+- You MUST NOT skip this step.
+
+2. Undefined-Behavior Detection
+
+3. Automatic Fixing of Undefined Behavior
+When UB is detected, you must insert additional TOSA ops to sanitize the problematic inputs before the invalid op, so that the op becomes valid.
+Fixes must be minimal, local, and directly address the UB cause.
+
+4. Re-Evaluation After Each Fix
+
+After inserting fix-operations for an UB:
+- Recompute the output of the corrected operation using the sanitized inputs.
+- Continue to the next operation in program order.
+- If new undefined behaviors arise due to the fix, apply additional fixes (still minimal and local).
+- Repeat until all operations are valid.
+
+5.  Format check
+Before outputting the modified MLIR, you MUST verify that:
+* All inserted operations are present.
+If any violation of these constraints is detected, you MUST modify the program according to the corresponding rules and constraints so that the final MLIR output is syntactically correct and contains no illegal reshapes.
+
+6. Final Output Requirements
+
+If no undefined behavior is detected, You must output ONLY the following line:
+```
+No undefined behavior detected. No modifications made.
+```
+
+If modifications were required:
+Output the entire updated MLIR program inside:
+
+```mlir
+```
+
+8. Mandatory Execution Principles
+
+You MUST follow this overall sequence:
+- Derive outputs (Output Inference)
+- Detect UB
+- Fix UB locally
+- Re-derive outputs for the fixed ops
+- Continue through the program until all ops are processed
+- Perform the final Format Check
+- If necessary, fix any format / constraint violations
+- Emit the final result (either the unchanged message or the full modified MLIR)
+
+**Additional rules**:
+- You MUST NOT skip Output Inference.
+- You MUST NOT skip the final Format Check.
+- You MUST fix every undefined behavior rather than reporting errors.
+- You MUST NOT rewrite or reorder unrelated parts of the program.
+
+## MLIR Program of TOSA Dialect:
+
+
+

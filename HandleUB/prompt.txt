@@ -1,0 +1,269 @@
+You are given an MLIR program in the TOSA dialect and an operation_requirement list.
+Your task is to analyze the program, detect undefined behaviors (UB) for only the specified ops, automatically fix them by inserting safe TOSA operations, and output the corrected MLIR.
+
+You MUST follow all instructions below strictly and in order.
+
+1. Output Inference
+Process the operation in given MLIR program sequentially in order. For each operation:
+- Derive the output values or symbolic expressions based on the inputs and operation semantics.
+- Use these computed outputs for later undefined-behavior detection.
+- You MUST NOT skip this step.
+
+2. Undefined-Behavior Detection
+You will also receive {operation_requirement}, a list that specifies:
+(1) which TOSA ops must be validated
+(2) the constraints that define valid inputs for each op
+
+**Detection Rules**:
+- Check only the TOSA operations explicitly listed in {operation_requirement}.
+- Any TOSA operation not listed is considered valid and must be skipped.
+- If any operand violates the listed constraints of that op, it is undefined behavior.
+
+3. Automatic Fixing of Undefined Behavior
+When UB is detected, you must insert additional TOSA ops to sanitize the problematic inputs before the invalid op, so that the op becomes valid.
+Fixes must be minimal, local, and directly address the UB cause.
+
+Allowed operations for fixes (inserted ops):
+You may use only simple and commonly used TOSA operations, including but not limited to: `tosa.const`,`tosa.add`,`tosa.sub`,`tosa.minimum`,`tosa.maximum`,`tosa.mul`,`tosa.abs`,`tosa.neg`, etc.
+**Constraints on inserted ops**:
+- You MUST NOT insert non-TOSA operations.
+- You MUST NOT insert complex or uncommon ops (especially ones requiring special attributes beyond those in the examples).
+- you must strictly follow **SSA Naming rules**: %<letter><number>
+    - Examples of valid names: %c1, %a3, %tmp7
+    - Examples of invalid names (must NOT be used): %1_cst, %_tmp
+- if you insert `tosa.minimum`, `tosa.maximum`,`"tosa.const"`, and `tosa.reshape` operations, you MUST satisfy all “Hard Constraints” below.
+
+4. Hard Constraints (MUST Always Hold)
+4.1 `tosa.minimum` / `tosa.maximum` operand consistency
+-------------------------------------------------------
+- Both operands MUST have **identical rank, shape, and element dtype**.
+- You MUST NOT rely on implicit broadcasting.
+- If shapes differ, you MUST first create a correctly shaped tensor so that the two operands match exactly.
+
+4.2 `tosa.reshape` semantic rule
+--------------------------------
+- `tosa.reshape` only changes shape; it performs **no data conversion**.
+- Output tensor MUST have:
+  - the same element type as the input, and
+  - the same total number of elements as the input.
+- If element count would change, the reshape is illegal and MUST NOT be used.
+
+4.3 Formatting, syntax, and Reference Examples
+----------------------------------------------
+- Every inserted op MUST be **valid MLIR + TOSA grammar**.
+- Attribute layout, type annotations, and line structure MUST **exactly** follow the Reference Examples below.
+- You MUST NOT imitate any pattern shown in the Error Examples.
+- **You MUST strictly adhere to the operator format in the Reference Examples.**
+- All inserted `tosa.minimum` / `tosa.maximum` / `tosa.const` / `tosa.reshape` MUST visually match the style of the corresponding Reference Examples (same ordering of attributes, same placement of types, same quoting style, etc.).
+- You MUST NOT alter the Reference Example code snippets themselves; they are canonical patterns.
+
+Reference Examples (Correct Formatting)
+## tosa.const:
+```
+%0 = "tosa.const"() <{values = dense<2> : tensor<1xi8>}> : () -> tensor<1xi8>
+%1 = "tosa.const"() <{values = dense<2.0> : tensor<1xf32>}> : () -> tensor<1xf32>
+```
+## tosa.maximum:
+```
+%0 = tosa.maximum %0, %1 : (tensor<1xf32>, tensor<1xf32>) -> tensor<1xf32>
+%1 = tosa.maximum %arg0, %arg1 : (tensor<5x4xi8>, tensor<5x4xi8>) -> tensor<5x4xi8>
+```
+## tosa.minimum:
+```
+%0 = tosa.minimum %arg0, %arg1 : (tensor<5x4xf32>, tensor<5x4xf32>) -> tensor<5x4xf32>
+%1 = tosa.minimum %0, %1 : (tensor<1xf32>, tensor<1xf32>) -> tensor<1xf32>
+```
+## tosa.reshape:
+```
+%0 = tosa.reshape %2, %3 : (tensor<76x9x5x9xi32>, !tosa.shape<4>) -> tensor<1x9x95x36xi32>
+%1 = tosa.reshape %0, %4 : (tensor<6x9xi64>, !tosa.shape<2>) -> tensor<1x54xi64>
+```
+
+Error Examples (Incorrect Syntax)
+## tosa.const(missing closing > in tensor type):
+```
+%0 = "tosa.const"() <{values = dense<-146> : tensor<9x9xi32}> : () -> tensor<9x9xi32>
+//error: expected '>' in tensor type
+``
+## tosa.maximum(operand ranks do not match):
+```
+%clamped_lower = tosa.maximum %5, %c0 : (tensor<7x2x1xi64>, tensor<1xi64>) -> tensor<7x2x1xi64>
+//error: 'tosa.maximum' op operands don't have matching ranks
+```
+## tosa.reshape(reshape not allowed / element count mismatch):
+%c0_bcast = "tosa.reshape"(%c0, %3) : (tensor<1xi64>, !tosa.shape<1>) -> tensor<1008xi64>
+//error: 'tosa.reshape' op cannot reshape 1 elements into 1008
+```
+
+5. Re-Evaluation After Each Fix
+
+After inserting fix-operations for an UB:
+- Recompute the output of the corrected operation using the sanitized inputs.
+- Continue to the next operation in program order.
+- If new undefined behaviors arise due to the fix, apply additional fixes (still minimal and local).
+- Repeat until all operations are valid with respect to {operation_requirement}.
+
+
+6.  Format check
+Before outputting the modified MLIR, you MUST verify that:
+* All inserted operations are present.
+* SSA names are unique and comply with the SSA naming rules above.
+* All existing `tosa.reshape` ops in the final program respect the element-count rule (input and output total element counts are identical). There MUST NOT be any reshape like:
+  - reshaping 1 element into 40 elements (e.g. `tensor<1xi8>` → `tensor<1x4x1x10xi8>`).
+* All inserted `tosa.minimum`, `tosa.maximum`, and `"tosa.const"` ops **exactly match** the Hard Constraints and Reference Examples (operand order, type annotations, and syntax).
+
+If any violation of these constraints is detected, you MUST modify the program according to the corresponding rules and constraints so that the final MLIR output is syntactically correct and contains no illegal reshapes.
+
+7. Final Output Requirements
+
+If no undefined behavior is detected, You must output ONLY the following line:
+```
+No undefined behavior detected. No modifications made.
+```
+
+If modifications were required:
+Output the entire updated MLIR program inside:
+
+```mlir
+```
+
+8. Mandatory Execution Principles
+
+You MUST follow this overall sequence:
+- Derive outputs (Output Inference)
+- Detect UB
+- Fix UB locally (insert allowed TOSA ops only, no new tosa.reshape)
+- Re-derive outputs for the fixed ops
+- Continue through the program until all ops are processed
+- Perform the final Format Check
+- If necessary, fix any format / constraint violations (especially incorrect SSA naming, illegal reshapes or shape mismatches)
+- Emit the final result (either the unchanged message or the full modified MLIR)
+
+**Additional rules**:
+- You MUST NOT skip Output Inference.
+- You MUST NOT skip the final Format Check.
+- You MUST fix every undefined behavior rather than reporting errors.
+- You MUST NOT rewrite or reorder unrelated parts of the program.
+
+Here are some examples of the process for eliminating undefined behavior:
+Example 1-
+Original MLIR program:
+```example
+module {
+  func.func private @printMemrefI64(tensor<*xi64>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<109> : tensor<3xi64>}> : () -> tensor<3xi64>
+    %1 = "tosa.const"() <{values = dense<169> : tensor<3xi64>}> : () -> tensor<3xi64>
+    %2 = tosa.logical_right_shift %0, %1 : (tensor<3xi64>, tensor<3xi64>) -> tensor<3xi64>
+    %cast = tensor.cast %2 : tensor<3xi64> to tensor<*xi64>
+    call @printMemrefI64(%cast) : (tensor<*xi64>) -> ()
+    return
+  }
+}
+```
+Modified MLIR program:
+```example
+module {
+  func.func private @printMemrefI64(tensor<*xi64>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<109> : tensor<3xi64>}> : () -> tensor<3xi64>
+    %1 = "tosa.const"() <{values = dense<169> : tensor<3xi64>}> : () -> tensor<3xi64>
+    %c63 = "tosa.const"() <{values = dense<63> : tensor<1xi64>}> : () -> tensor<1xi64>
+    %safe_shift = tosa.minimum %1, %c63 : (tensor<3xi64>, tensor<1xi64>) -> tensor<3xi64>
+    %2 = tosa.logical_right_shift %0, %safe_shift : (tensor<3xi64>, tensor<3xi64>) -> tensor<3xi64>
+    %cast = tensor.cast %2 : tensor<3xi64> to tensor<*xi64>
+    call @printMemrefI64(%cast) : (tensor<*xi64>) -> ()
+    return
+  }
+}
+```
+Example 2-
+Original MLIR program:
+```example
+module {
+  func.func private @printMemrefI32(tensor<*xi32>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<-70> : tensor<4x9x5x9xi32>}> : () -> tensor<4x9x5x9xi32>
+    %1 = "tosa.const"() <{values = dense<77> : tensor<72x9x5x9xi32>}> : () -> tensor<72x9x5x9xi32>
+    %2 = tosa.concat %0, %1 {axis = 0 : i32} : (tensor<4x9x5x9xi32>, tensor<72x9x5x9xi32>) -> tensor<76x9x5x9xi32>
+    %3 = tosa.const_shape  {values = dense<[1, 9, 95, 36]> : tensor<4xindex>} : () -> !tosa.shape<4>
+    %4 = tosa.reshape %2, %3 : (tensor<76x9x5x9xi32>, !tosa.shape<4>) -> tensor<1x9x95x36xi32>
+    %5 = tosa.logical_right_shift %4, %4 : (tensor<1x9x95x36xi32>, tensor<1x9x95x36xi32>) -> tensor<1x9x95x36xi32>
+    %cast = tensor.cast %5 : tensor<1x9x95x36xi32> to tensor<*xi32>
+    call @printMemrefI32(%cast) : (tensor<*xi32>) -> ()
+    return
+  }
+}
+
+```
+Modified MLIR program:
+```example
+module {
+  func.func private @printMemrefI32(tensor<*xi32>)
+  func.func @main() {
+    %0 = "tosa.const"() <{values = dense<-70> : tensor<4x9x5x9xi32>}> : () -> tensor<4x9x5x9xi32>
+    %1 = "tosa.const"() <{values = dense<77> : tensor<72x9x5x9xi32>}> : () -> tensor<72x9x5x9xi32>
+    %2 = tosa.concat %0, %1 {axis = 0 : i32} : (tensor<4x9x5x9xi32>, tensor<72x9x5x9xi32>) -> tensor<76x9x5x9xi32>
+    %3 = tosa.const_shape  {values = dense<[1, 9, 95, 36]> : tensor<4xindex>} : () -> !tosa.shape<4>
+    %4 = tosa.reshape %2, %3 : (tensor<76x9x5x9xi32>, !tosa.shape<4>) -> tensor<1x9x95x36xi32>
+    %c0 = "tosa.const"() <{values = dense<0> : tensor<1x9x95x36xi32>}> : () -> tensor<1x9x95x36xi32>
+    %c31 = "tosa.const"() <{values = dense<31> : tensor<1x9x95x36xi32>}> : () -> tensor<1x9x95x36xi32>
+    %clamped_lower = tosa.maximum %4, %c0 : (tensor<1x9x95x36xi32>, tensor<1x9x95x36xi32>) -> tensor<1x9x95x36xi32>
+    %clamped_shift = tosa.minimum %clamped_lower, %c31 : (tensor<1x9x95x36xi32>, tensor<1x9x95x36xi32>) -> tensor<1x9x95x36xi32>
+    %5 = tosa.logical_right_shift %4, %clamped_shift : (tensor<1x9x95x36xi32>, tensor<1x9x95x36xi32>) -> tensor<1x9x95x36xi32>
+    %cast = tensor.cast %5 : tensor<1x9x95x36xi32> to tensor<*xi32>
+    call @printMemrefI32(%cast) : (tensor<*xi32>) -> ()
+    return
+  }
+}
+```
+
+
+## Below are operation_requirement:
+[
+  {
+    "op": "tosa.arithmetic_right_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n\n    in_out_t result = apply_arith_rshift<in_out_t>(value1, value2);\n    if (round == true && static_cast<int32_t>(value2) > 0 &&\n        (apply_arith_rshift<in_out_t>(value1, apply_sub_s<in_out_t>(value2, 1)) & 1 != 0)) {\n        result = result + 1;\n    }\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.intdiv",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    REQUIRE(value2 != 0);\n    in_out_t result = apply_intdiv_s<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.logical_left_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n    in_out_t result = value1 << value2;\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.logical_right_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n\n    // Logical shifts happen as unsigned types internally\n    in_out_t result = apply_logical_rshift<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.mul",
+    "Operation requirement": "REQUIRE(0 <= shift && shift <= 63);\nREQUIRE(is_same<in_t,int32_t>() || shift == 0);\nERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_t value1 = tensor_read<in_t>(input1, shape1, index1);\n    in_t value2 = tensor_read<in_t>(input2, shape2, index2);\n    out_t result;\n    if (is_same<in_t,i32_t>() && shift > 0) {\n        int64_t product = sign_extend<int64_t>(value1) * sign_extend<int64_t>(value2);\n        int64_t round   = static_cast<int64_t>(1) << (shift - 1);\n        product = (product + round) >> shift;\n        REQUIRE(product >= minimum_s<i32_t>() && product <= maximum_s<i32_t>());\n        result = static_cast<out_t>(product);\n    } else {\n        result = apply_mul_s<out_t>(static_cast<out_t>(value1), static_cast<out_t>(value2));  // low 32-bits of result for i32_t\n    }\n    tensor_write<out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.pow",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\n\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    REQUIRE(value1 >= 0);\n    REQUIRE(value1 > 0 || value2 > 0);\n    REQUIRE(!isNaN(value1) && !isNaN(value2));\n    REQUIRE(is_finite(value1) && is_finite(value2));\n    in_out_t result = apply_pow<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.table",
+    "Operation requirement": "REQUIRE(length(table) == TABLE_SIZE);\nfor_each_data_position(index in shape) {\n    in_t value = tensor_read<in_t>(input1, shape, index);\n    out_t result;\n    if (is_same<in_t,i8_t>()) {\n        // value is a signed int, convert to a 0 based index\n        result = table[static_cast<int16_t>(value) + 128];\n    } else {\n        result = apply_lookup_s(static_cast<int16_t>(table), static_cast<int16_t>(value));\n    }\n    tensor_write<out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.gather",
+    "Operation requirement": "for_each(0 <= n < N, 0 <= w < W, 0 <= c < C) {\n    index_t k = tensor_read<index_t>(indices, [N,W], [n,w]);\n    REQUIRE(0 <= k && k < K);\n    in_out_t value = tensor_read<in_out_t>(values, [N,K,C], [n,k,c]);\n    tensor_write<in_out_t>(output, [N,W,C], [n,w,c], value);\n}"
+  },
+  {
+    "op": "tosa.scatter",
+    "Operation requirement": "// The following array is used to check compliance that an output position\n// is modified at most once.\nbool_t output_modified[N,K,C];\n\n// Copy the values_in tensor to the values_out tensor.\n// Values not written by the scatter operation are unchanged in the output.\nfor_each(0 <= n < N, 0 <= k < K, 0 <= c < C) {\n    in_out_t value = tensor_read<in_out_t>(values_in, [N,K,C], [n,k,c]);\n    tensor_write<in_out_t>(values_out, [N,K,C], [n, k, c], value);\n    output_modified[n,k,c]=false;\n}\n\n// Now perform the SCATTER operation, modifying the positions from the indices tensor\nfor_each(0 <= n < N, 0 <= w < W, 0 <= c < C) {\n    index_t k = tensor_read<index_t>(indices, [N,W], [n,w]);\n    REQUIRE(0 <= k && k < K);\n    REQUIRE(output_modified[n,k,c] == false);\n    in_out_t value = tensor_read<in_out_t>(input, [N,W,C], [n,w,c]);\n    tensor_write<in_out_t>(values_out, [N,K,C], [n, k, c], value);\n    output_modified[n,k,c] = true;\n}"
+  },
+  {
+    "op": "tosa.variable",
+    "Operation requirement": "tensor_t var_tensor = variable_tensor_lookup(name);\n\n// Invocation for the first time\nif (var_tensor == NULL) {\n  // Allocate the persistent mutable memory for the variable tensor\n  var_tensor = variable_tensor_allocate<var_t>(var_shape, name);\n\n  if (initial_value != NULL) {\n    REQUIRE(var_t == in_t);\n    REQUIRE(var_shape == shape);\n    for_each_data_position (index in shape) {\n      // Copy data from initial_value to var_tensor\n      in_t value = tensor_read<in_t>(initial_value, shape, index);\n      tensor_write<in_t>(var_tensor.data, var_shape, index, value);\n    }\n    var_tensor.is_written = true;\n  }\n} else { // Variable tensor has already been declared\n  // It's invalid to declare the second variable with the same name in a single graph execution,\n  REQUIRE(!var_tensor.seen);\n}\n\nvar_tensor.seen = true;"
+  }
+]
+
+## MLIR Program of TOSA Dialect:
+
+
+

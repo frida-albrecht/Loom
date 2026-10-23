@@ -1,0 +1,42 @@
+[
+  {
+    "op": "tosa.arithmetic_right_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n\n    in_out_t result = apply_arith_rshift<in_out_t>(value1, value2);\n    if (round == true && static_cast<int32_t>(value2) > 0 &&\n        (apply_arith_rshift<in_out_t>(value1, apply_sub_s<in_out_t>(value2, 1)) & 1 != 0)) {\n        result = result + 1;\n    }\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.intdiv",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    REQUIRE(value2 != 0);\n    in_out_t result = apply_intdiv_s<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.logical_left_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n    in_out_t result = value1 << value2;\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.logical_right_shift",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n\n    // Ensure that shift amount is appropriate for the data type\n    REQUIRE((is_same<in_out_t,i32_t>() && 0 <= value2 && value2 <= 31) ||\n            (is_same<in_out_t,i16_t>() && 0 <= value2 && value2 <= 15) ||\n            (is_same<in_out_t,i8_t>() && 0 <= value2 && value2 <= 7));\n\n    // Logical shifts happen as unsigned types internally\n    in_out_t result = apply_logical_rshift<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.mul",
+    "Operation requirement": "REQUIRE(0 <= shift && shift <= 63);\nREQUIRE(is_same<in_t,int32_t>() || shift == 0);\nERROR_IF(shape != broadcast_shape(shape1, shape2));\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_t value1 = tensor_read<in_t>(input1, shape1, index1);\n    in_t value2 = tensor_read<in_t>(input2, shape2, index2);\n    out_t result;\n    if (is_same<in_t,i32_t>() && shift > 0) {\n        int64_t product = sign_extend<int64_t>(value1) * sign_extend<int64_t>(value2);\n        int64_t round   = static_cast<int64_t>(1) << (shift - 1);\n        product = (product + round) >> shift;\n        REQUIRE(product >= minimum_s<i32_t>() && product <= maximum_s<i32_t>());\n        result = static_cast<out_t>(product);\n    } else {\n        result = apply_mul_s<out_t>(static_cast<out_t>(value1), static_cast<out_t>(value2));  // low 32-bits of result for i32_t\n    }\n    tensor_write<out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.pow",
+    "Operation requirement": "ERROR_IF(shape != broadcast_shape(shape1, shape2));\n\nfor_each_data_position(index in shape) {\n    shape_t index1 = apply_broadcast(shape, shape1, index);\n    shape_t index2 = apply_broadcast(shape, shape2, index);\n    in_out_t value1 = tensor_read<in_out_t>(input1, shape1, index1);\n    in_out_t value2 = tensor_read<in_out_t>(input2, shape2, index2);\n    REQUIRE(value1 >= 0);\n    REQUIRE(value1 > 0 || value2 > 0);\n    REQUIRE(!isNaN(value1) && !isNaN(value2));\n    REQUIRE(is_finite(value1) && is_finite(value2));\n    in_out_t result = apply_pow<in_out_t>(value1, value2);\n    tensor_write<in_out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.table",
+    "Operation requirement": "REQUIRE(length(table) == TABLE_SIZE);\nfor_each_data_position(index in shape) {\n    in_t value = tensor_read<in_t>(input1, shape, index);\n    out_t result;\n    if (is_same<in_t,i8_t>()) {\n        // value is a signed int, convert to a 0 based index\n        result = table[static_cast<int16_t>(value) + 128];\n    } else {\n        result = apply_lookup_s(static_cast<int16_t>(table), static_cast<int16_t>(value));\n    }\n    tensor_write<out_t>(output, shape, index, result);\n}"
+  },
+  {
+    "op": "tosa.gather",
+    "Operation requirement": "for_each(0 <= n < N, 0 <= w < W, 0 <= c < C) {\n    index_t k = tensor_read<index_t>(indices, [N,W], [n,w]);\n    REQUIRE(0 <= k && k < K);\n    in_out_t value = tensor_read<in_out_t>(values, [N,K,C], [n,k,c]);\n    tensor_write<in_out_t>(output, [N,W,C], [n,w,c], value);\n}"
+  },
+  {
+    "op": "tosa.scatter",
+    "Operation requirement": "// The following array is used to check compliance that an output position\n// is modified at most once.\nbool_t output_modified[N,K,C];\n\n// Copy the values_in tensor to the values_out tensor.\n// Values not written by the scatter operation are unchanged in the output.\nfor_each(0 <= n < N, 0 <= k < K, 0 <= c < C) {\n    in_out_t value = tensor_read<in_out_t>(values_in, [N,K,C], [n,k,c]);\n    tensor_write<in_out_t>(values_out, [N,K,C], [n, k, c], value);\n    output_modified[n,k,c]=false;\n}\n\n// Now perform the SCATTER operation, modifying the positions from the indices tensor\nfor_each(0 <= n < N, 0 <= w < W, 0 <= c < C) {\n    index_t k = tensor_read<index_t>(indices, [N,W], [n,w]);\n    REQUIRE(0 <= k && k < K);\n    REQUIRE(output_modified[n,k,c] == false);\n    in_out_t value = tensor_read<in_out_t>(input, [N,W,C], [n,w,c]);\n    tensor_write<in_out_t>(values_out, [N,K,C], [n, k, c], value);\n    output_modified[n,k,c] = true;\n}"
+  },
+  {
+    "op": "tosa.variable",
+    "Operation requirement": "tensor_t var_tensor = variable_tensor_lookup(name);\n\n// Invocation for the first time\nif (var_tensor == NULL) {\n  // Allocate the persistent mutable memory for the variable tensor\n  var_tensor = variable_tensor_allocate<var_t>(var_shape, name);\n\n  if (initial_value != NULL) {\n    REQUIRE(var_t == in_t);\n    REQUIRE(var_shape == shape);\n    for_each_data_position (index in shape) {\n      // Copy data from initial_value to var_tensor\n      in_t value = tensor_read<in_t>(initial_value, shape, index);\n      tensor_write<in_t>(var_tensor.data, var_shape, index, value);\n    }\n    var_tensor.is_written = true;\n  }\n} else { // Variable tensor has already been declared\n  // It's invalid to declare the second variable with the same name in a single graph execution,\n  REQUIRE(!var_tensor.seen);\n}\n\nvar_tensor.seen = true;"
+  }
+]
